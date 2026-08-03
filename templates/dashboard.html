@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weatherly Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+<div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+        <a class="brand" href="{{ url_for('dashboard') }}">
+            <span class="brand-mark"><i class="fa-solid fa-cloud-sun"></i></span>
+            <span>Weatherly</span>
+        </a>
+
+        <nav class="sidebar-nav" aria-label="Main navigation">
+            <a class="nav-item active" href="{{ url_for('dashboard') }}"><i class="fa-solid fa-house"></i><span>Dashboard</span></a>
+            <a class="nav-item" href="#weather-map"><i class="fa-regular fa-map"></i><span>Maps</span></a>
+            <a class="nav-item" href="#favorites"><i class="fa-regular fa-heart"></i><span>Favorites</span></a>
+            <a class="nav-item" href="#forecast"><i class="fa-regular fa-calendar-days"></i><span>Forecast</span></a>
+            <a class="nav-item" href="#weather-alerts"><i class="fa-regular fa-bell"></i><span>Alerts</span>{% if alert_count %}<b class="nav-alert-count">{{ alert_count }}</b>{% endif %}</a>
+        </nav>
+
+        <div class="promo-card">
+            <div class="promo-art"><i class="fa-solid fa-cloud-sun-rain"></i></div>
+            <h3>Stay Updated</h3>
+            <p>Search any city and plan your day with confidence.</p>
+            <button class="explore-weather-button" id="explore-weather-button" type="button">Explore Weather <i class="fa-solid fa-arrow-right"></i></button>
+        </div>
+</aside>
+
+    <div class="page-area">
+        <header class="topbar">
+            <button class="mobile-menu" id="mobile-menu" type="button" aria-label="Open menu"><i class="fa-solid fa-bars"></i></button>
+            <div class="welcome-copy">
+                <h1>Welcome back, <span>{{ username }}</span>! <span class="wave">👋</span></h1>
+                <p>Check the weather details and stay prepared.</p>
+            </div>
+
+            <form class="search-form" id="search" action="{{ url_for('dashboard') }}" method="GET">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input name="city" value="{{ city or '' }}" placeholder="Search city, country code (example: Rome, IT)" autocomplete="off" required>
+                <button type="submit" aria-label="Search"><i class="fa-solid fa-arrow-right"></i></button>
+            </form>
+
+            <div class="explore-popover" id="explore-popover" hidden>
+                <strong>Explore popular weather</strong>
+                <p>Choose a city or type your own destination.</p>
+                <div class="explore-city-grid">
+                    <a href="{{ url_for('dashboard', city='Beirut, LB') }}">Beirut</a>
+                    <a href="{{ url_for('dashboard', city='Dubai, AE') }}">Dubai</a>
+                    <a href="{{ url_for('dashboard', city='London, GB') }}">London</a>
+                    <a href="{{ url_for('dashboard', city='Paris, FR') }}">Paris</a>
+                    <a href="{{ url_for('dashboard', city='Tokyo, JP') }}">Tokyo</a>
+                    <a href="{{ url_for('dashboard', city='New York, US') }}">New York</a>
+                </div>
+            </div>
+
+            <div class="account-area">
+                <button class="notification-button" id="notification-button" type="button" aria-label="Open weather alerts">
+                    <i class="fa-regular fa-bell"></i>
+                    {% if alert_count %}<span>{{ alert_count }}</span>{% endif %}
+                </button>
+                <div class="avatar"><i class="fa-solid fa-user"></i></div>
+                <button class="profile-theme-button" id="theme-toggle" type="button" aria-label="Toggle dark mode" title="Switch theme">
+                    <i class="fa-regular fa-moon"></i>
+                </button>
+                <div class="account-copy"><strong>{{ username }}</strong><small><i></i> Online</small></div>
+                <a class="logout" href="{{ url_for('logout') }}" title="Log out"><i class="fa-solid fa-arrow-right-from-bracket"></i></a>
+            </div>
+        </header>
+
+        <main class="dashboard-content">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    <div class="flash-stack">
+                        {% for category, message in messages %}<div class="flash-message {{ category }}">{{ message }}</div>{% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            {% if error %}<div class="weather-error"><i class="fa-solid fa-circle-exclamation"></i>{{ error }}</div>{% endif %}
+
+            <section class="dashboard-grid top-grid">
+                <section class="map-panel" id="weather-map">
+                    <div class="panel-heading map-heading">
+                        <div>
+                            <h2>Weather Map</h2>
+                            <span>Explore the searched location</span>
+                        </div>
+                        {% if weather %}
+                        <button class="location-button" id="my-location-button" type="button">
+                            <i class="fa-solid fa-location-crosshairs"></i>
+                            My location
+                        </button>
+                        {% endif %}
+                    </div>
+
+                    {% if weather %}
+                    <div
+                        id="map"
+                        class="weather-map"
+                        data-latitude="{{ weather.latitude }}"
+                        data-longitude="{{ weather.longitude }}"
+                        data-city="{{ weather.city }}"
+                        data-country="{{ weather.country }}"
+                        data-temperature="{{ weather.temperature }}"
+                        data-description="{{ weather.description }}"
+                        data-humidity="{{ weather.humidity }}"
+                        data-icon="{{ weather.icon }}"
+                    ></div>
+
+                    <div class="map-location-summary">
+                        <span class="map-pin"><i class="fa-solid fa-location-dot"></i></span>
+                        <span>
+                            <strong>{{ weather.city }}, {{ weather.country }}</strong>
+                            <small>{{ weather.description }} · {{ weather.temperature }}°C</small>
+                        </span>
+                    </div>
+                    {% else %}
+                    <div class="panel-empty map-empty">
+                        <i class="fa-regular fa-map"></i>
+                        <p>Search for a city to display it on the map.</p>
+                    </div>
+                    {% endif %}
+                </section>
+
+                {% if weather %}
+                <article class="current-card">
+                    <div class="current-card-head">
+                        <div>
+                            <h2><i class="fa-solid fa-location-dot"></i> {{ weather.city }}, {{ weather.country }}</h2>
+                            <p>{{ weather.local_time }}</p>
+                        </div>
+                        {% if weather.is_favorite %}
+                        <form action="{{ url_for('remove_favorite', favorite_id=weather.favorite_id) }}" method="POST">
+                            <button class="weather-menu heart active" type="submit" aria-label="Remove from favorites"><i class="fa-solid fa-heart"></i></button>
+                        </form>
+                        {% else %}
+                        <form action="{{ url_for('add_favorite') }}" method="POST">
+                            <input type="hidden" name="city_name" value="{{ weather.city }}">
+                            <input type="hidden" name="country_code" value="{{ weather.country }}">
+                            <input type="hidden" name="latitude" value="{{ weather.latitude }}">
+                            <input type="hidden" name="longitude" value="{{ weather.longitude }}">
+                            <button class="weather-menu heart" type="submit" aria-label="Add to favorites"><i class="fa-regular fa-heart"></i></button>
+                        </form>
+                        {% endif %}
+                    </div>
+
+                    <div class="current-main">
+                        <div>
+                            <div class="giant-temperature">{{ weather.temperature }}<sup>°C</sup></div>
+                            <h3>{{ weather.description }}</h3>
+                        </div>
+                        <div class="weather-illustration">
+                            <span class="sun"></span>
+                            <img src="https://openweathermap.org/img/wn/{{ weather.icon }}@4x.png" alt="{{ weather.description }}">
+                        </div>
+                    </div>
+
+                    <div class="metrics">
+                        <div><i class="fa-solid fa-temperature-half"></i><span>Feels like<strong>{{ weather.feels_like }}°C</strong></span></div>
+                        <div><i class="fa-solid fa-droplet"></i><span>Humidity<strong>{{ weather.humidity }}%</strong></span></div>
+                        <div><i class="fa-solid fa-wind"></i><span>Wind<strong>{{ weather.wind_speed }} km/h</strong></span></div>
+                        <div><i class="fa-solid fa-gauge-high"></i><span>Pressure<strong>{{ weather.pressure }} hPa</strong></span></div>
+                        <div><i class="fa-regular fa-eye"></i><span>Visibility<strong>{{ weather.visibility }} km</strong></span></div>
+                    </div>
+                </article>
+                {% else %}
+                <article class="current-card empty-current">
+                    <i class="fa-solid fa-cloud-sun"></i>
+                    <h2>Discover weather anywhere</h2>
+                    <p>Search for a city to load current conditions and a five-day outlook.</p>
+                </article>
+                {% endif %}
+
+                <section class="forecast-panel" id="forecast">
+                    <div class="panel-heading"><h2>5-Day Forecast</h2><span>Daily outlook</span></div>
+                    {% if forecast %}
+                    <div class="forecast-row">
+                        {% for day in forecast %}
+                        <article class="forecast-day">
+                            <strong>{{ day.day }}</strong>
+                            <small>{{ day.date }}</small>
+                            <img src="https://openweathermap.org/img/wn/{{ day.icon }}@2x.png" alt="{{ day.description }}">
+                            <b>{{ day.high }}°C</b>
+                            <span>{{ day.low }}°C</span>
+                            <p>{{ day.description }}</p>
+                        </article>
+                        {% endfor %}
+                    </div>
+                    {% else %}<div class="panel-empty">Forecast will appear here.</div>{% endif %}
+                </section>
+            </section>
+
+            <section class="alerts-panel" id="weather-alerts">
+                <div class="panel-heading alerts-heading">
+                    <div>
+                        <h2>Weather Alerts</h2>
+                        <span>Safety guidance for {{ weather.city if weather else 'your selected city' }}</span>
+                    </div>
+                    <span class="alerts-status">
+                        {% if alert_count %}
+                            {{ alert_count }} active
+                        {% else %}
+                            All clear
+                        {% endif %}
+                    </span>
+                </div>
+
+                <div class="alerts-grid">
+                    {% for item in weather_alerts %}
+                    <article class="weather-alert alert-{{ item.type }}">
+                        <span class="alert-icon"><i class="fa-solid {{ item.icon }}"></i></span>
+                        <div>
+                            <strong>{{ item.title }}</strong>
+                            <p>{{ item.message }}</p>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="dashboard-grid bottom-grid">
+                <section class="standard-panel" id="favorites">
+                    <div class="panel-heading"><h2>Favorite Cities</h2><span>{{ favorites|length }} saved</span></div>
+                    {% if favorite_cards %}
+                    <div class="city-list">
+                        {% for card in favorite_cards %}
+                        <article class="city-row">
+                            <a href="{{ url_for('dashboard', city=card.favorite.city.city_name) }}">
+                                <img src="https://openweathermap.org/img/wn/{{ card.icon }}.png" alt="">
+                                <span><strong>{{ card.favorite.city.city_name }}, {{ card.favorite.city.country_code }}</strong><small>{{ card.description }}</small></span>
+                                <b>{% if card.temperature is not none %}{{ card.temperature }}°C{% else %}--{% endif %}</b>
+                            </a>
+                            <form action="{{ url_for('remove_favorite', favorite_id=card.favorite.id) }}" method="POST"><button aria-label="Remove favorite"><i class="fa-solid fa-star"></i></button></form>
+                        </article>
+                        {% endfor %}
+                    </div>
+                    {% else %}<div class="panel-empty"><i class="fa-regular fa-heart"></i><p>No favorite cities yet.</p></div>{% endif %}
+                </section>
+
+                <section class="standard-panel">
+                    <div class="panel-heading"><h2>Recent Searches</h2><span>Latest</span></div>
+                    {% if recent_searches %}
+                    <div class="history-list">
+                        {% for item in recent_searches %}
+                        <a class="history-row" href="{{ url_for('dashboard', city=item.city.city_name) }}">
+                            <i class="fa-regular fa-clock"></i>
+                            <span><strong>{{ item.city.city_name }}, {{ item.city.country_code }}</strong><small>{{ item.searched_at.strftime('%b %d · %I:%M %p') }}</small></span>
+                            <i class="fa-solid fa-arrow-right"></i>
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% else %}<div class="panel-empty"><i class="fa-regular fa-clock"></i><p>Your city searches will appear here.</p></div>{% endif %}
+                </section>
+
+                <section class="sun-panel">
+                    {% if weather %}
+                    <div class="sun-times"><span><i class="fa-solid fa-sun"></i> Sunrise<strong>{{ weather.sunrise }}</strong></span><span><i class="fa-solid fa-cloud-sun"></i> Sunset<strong>{{ weather.sunset }}</strong></span></div>
+                    <div class="sun-arc"><span></span><i class="fa-solid fa-sun"></i></div>
+                    <div class="environment-list">
+                        <div><span><i class="fa-solid fa-leaf"></i> Air Quality</span><strong>{{ air_quality }}</strong></div>
+                        <div><span><i class="fa-solid fa-eye"></i> Visibility</span><strong>{{ weather.visibility }} km</strong></div>
+                        <div><span><i class="fa-solid fa-moon"></i> Moon Phase</span><strong>Current cycle</strong></div>
+                    </div>
+                    {% else %}<div class="panel-empty light"><i class="fa-solid fa-sun"></i><p>Sun and atmosphere details will appear here.</p></div>{% endif %}
+                </section>
+            </section>
+        </main>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const body = document.body;
+    const sidebar = document.getElementById("sidebar");
+    const menu = document.getElementById("mobile-menu");
+    const theme = document.getElementById("theme-toggle");
+    const savedTheme = localStorage.getItem("weatherly-theme");
+
+    if (savedTheme === "dark") {
+        body.classList.add("dark-mode");
+    }
+
+    function updateThemeIcon() {
+        const icon = theme?.querySelector("i");
+        if (!icon) return;
+
+        if (body.classList.contains("dark-mode")) {
+            icon.className = "fa-solid fa-sun";
+            theme.setAttribute("aria-label", "Switch to light mode");
+        } else {
+            icon.className = "fa-regular fa-moon";
+            theme.setAttribute("aria-label", "Switch to dark mode");
+        }
+    }
+
+    updateThemeIcon();
+
+    menu?.addEventListener("click", () => sidebar.classList.toggle("open"));
+
+    document.querySelectorAll(".sidebar-nav a").forEach((link) => {
+        link.addEventListener("click", () => sidebar.classList.remove("open"));
+    });
+
+    const searchForm = document.getElementById("search");
+    const searchInput = searchForm?.querySelector("input[name='city']");
+    const exploreButton = document.getElementById("explore-weather-button");
+    const explorePopover = document.getElementById("explore-popover");
+    const notificationButton = document.getElementById("notification-button");
+    const alertsPanel = document.getElementById("weather-alerts");
+
+    exploreButton?.addEventListener("click", () => {
+        searchForm?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        window.setTimeout(() => {
+            searchInput?.focus();
+            if (explorePopover) {
+                explorePopover.hidden = false;
+                explorePopover.classList.add("show");
+            }
+        }, 450);
+    });
+
+    notificationButton?.addEventListener("click", () => {
+        alertsPanel?.scrollIntoView({ behavior: "smooth", block: "start" });
+        alertsPanel?.classList.add("alerts-highlight");
+
+        window.setTimeout(() => {
+            alertsPanel?.classList.remove("alerts-highlight");
+        }, 1400);
+    });
+
+    document.addEventListener("click", (event) => {
+        if (
+            explorePopover &&
+            !explorePopover.hidden &&
+            !explorePopover.contains(event.target) &&
+            !exploreButton?.contains(event.target) &&
+            !searchForm?.contains(event.target)
+        ) {
+            explorePopover.classList.remove("show");
+            window.setTimeout(() => {
+                explorePopover.hidden = true;
+            }, 180);
+        }
+    });
+
+    let weatherMap = null;
+    let baseLayer = null;
+    let userMarker = null;
+
+    const mapElement = document.getElementById("map");
+    const lightTiles = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+    const darkTiles = "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+
+    function installTileLayer() {
+        if (!weatherMap) return;
+
+        if (baseLayer) {
+            weatherMap.removeLayer(baseLayer);
+        }
+
+        baseLayer = L.tileLayer(
+            body.classList.contains("dark-mode") ? darkTiles : lightTiles,
+            {
+                maxZoom: 19,
+                attribution: body.classList.contains("dark-mode")
+                    ? "&copy; OpenStreetMap contributors &copy; CARTO"
+                    : "&copy; OpenStreetMap contributors"
+            }
+        ).addTo(weatherMap);
+    }
+
+    function weatherPopup(element) {
+        return `
+            <div class="weather-map-popup">
+                <img
+                    src="https://openweathermap.org/img/wn/${element.dataset.icon}@2x.png"
+                    alt="${element.dataset.description}"
+                >
+                <div>
+                    <strong>${element.dataset.city}, ${element.dataset.country}</strong>
+                    <span>${element.dataset.temperature}°C · ${element.dataset.description}</span>
+                    <small>Humidity ${element.dataset.humidity}%</small>
+                </div>
+            </div>
+        `;
+    }
+
+    if (mapElement && window.L) {
+        const latitude = Number(mapElement.dataset.latitude);
+        const longitude = Number(mapElement.dataset.longitude);
+
+        if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+            weatherMap = L.map(mapElement).setView([latitude, longitude], 9);
+            installTileLayer();
+
+            const markerIcon = L.divIcon({
+                className: "weather-map-marker",
+                html: '<span><i class="fa-solid fa-location-dot"></i></span>',
+                iconSize: [46, 54],
+                iconAnchor: [23, 50],
+                popupAnchor: [0, -45]
+            });
+
+            L.marker([latitude, longitude], { icon: markerIcon })
+                .addTo(weatherMap)
+                .bindPopup(weatherPopup(mapElement), {
+                    closeButton: true
+                });
+
+            setTimeout(() => weatherMap.invalidateSize(), 150);
+        }
+    }
+
+    theme?.addEventListener("click", () => {
+        body.classList.toggle("dark-mode");
+        localStorage.setItem(
+            "weatherly-theme",
+            body.classList.contains("dark-mode") ? "dark" : "light"
+        );
+        updateThemeIcon();
+        installTileLayer();
+    });
+
+    const locationButton = document.getElementById("my-location-button");
+
+    locationButton?.addEventListener("click", () => {
+        if (!navigator.geolocation || !weatherMap) {
+            alert("Location access is not available in this browser.");
+            return;
+        }
+
+        locationButton.disabled = true;
+        locationButton.innerHTML =
+            '<i class="fa-solid fa-spinner fa-spin"></i> Locating';
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                const latitude = position.coords.latitude;
+                const longitude = position.coords.longitude;
+
+                if (userMarker) {
+                    weatherMap.removeLayer(userMarker);
+                }
+
+                userMarker = L.circleMarker([latitude, longitude], {
+                    radius: 9,
+                    weight: 4,
+                    color: "#ffffff",
+                    fillColor: "#1675eb",
+                    fillOpacity: 1
+                })
+                    .addTo(weatherMap)
+                    .bindPopup("<strong>Your current location</strong>")
+                    .openPopup();
+
+                weatherMap.flyTo([latitude, longitude], 12, {
+                    duration: 1.4
+                });
+
+                locationButton.disabled = false;
+                locationButton.innerHTML =
+                    '<i class="fa-solid fa-location-crosshairs"></i> My location';
+            },
+            () => {
+                locationButton.disabled = false;
+                locationButton.innerHTML =
+                    '<i class="fa-solid fa-location-crosshairs"></i> My location';
+
+                alert(
+                    "Weatherly could not access your location. Please allow location permission and try again."
+                );
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 300000
+            }
+        );
+    });
+});
+</script>
+</body>
+</html>
